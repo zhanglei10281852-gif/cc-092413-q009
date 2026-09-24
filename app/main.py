@@ -10,6 +10,7 @@ from app.core.errors import DomainError
 from app.database import close_connection, init_db
 from app.routers import affairs, announcements, departments, petitions, residents
 from app.seismic.router import router as seismic_router
+from app.seismic.sequences import SequenceService
 from app.seismic.service import ensure_schema as ensure_seismic_schema
 
 
@@ -18,6 +19,8 @@ async def lifespan(app: FastAPI):
     del app
     init_db()
     ensure_seismic_schema()
+    # 重启后恢复余震序列与窗口游标（滞后于统计版本的游标会在下次推进时重算）
+    SequenceService().recover()
     yield
     close_connection()
 

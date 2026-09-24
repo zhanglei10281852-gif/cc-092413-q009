@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.database import get_connection, transaction
+from app.seismic.sequences import SEQUENCE_SCHEMA as SEQUENCE_TABLES
+from app.seismic.sequences import associate_new_event
 
 
 SCHEMA = """
@@ -71,7 +73,7 @@ CREATE TABLE IF NOT EXISTS seismic_event_audit (
 );
 CREATE INDEX IF NOT EXISTS idx_seismic_obs_event ON seismic_observations(event_id, observed_at);
 CREATE INDEX IF NOT EXISTS idx_seismic_tasks_status ON seismic_computations(status, created_at);
-"""
+""" + SEQUENCE_TABLES
 
 
 def _now() -> str:
@@ -138,7 +140,11 @@ class SeismicService:
             )
             event_id = cursor.lastrowid
             connection.execute("INSERT INTO seismic_event_audit(event_id,action,actor,after_json,created_at) VALUES(?,?,?,?,?)", (event_id, "create", actor, json.dumps(payload, ensure_ascii=False), now))
-            return _row(connection.execute("SELECT * FROM seismic_events WHERE id=?", (event_id,)).fetchone()) or {}
+            created_event = connection.execute("SELECT * FROM seismic_events WHERE id=?", (event_id,)).fetchone()
+            membership = associate_new_event(connection, created_event, now)
+            result = _row(created_event) or {}
+            result["sequence_membership"] = membership
+            return result
 
     def get_event(self, event_id: int, include_observations: bool = True) -> dict[str, Any] | None:
         event = self.connection.execute("SELECT * FROM seismic_events WHERE id=?", (event_id,)).fetchone()
@@ -148,6 +154,9 @@ class SeismicService:
         if include_observations:
             rows = self.connection.execute("SELECT * FROM seismic_observations WHERE event_id=? ORDER BY observed_at, id", (event_id,)).fetchall()
             result["observations"] = [dict(item) for item in rows]
+        from app.seismic.sequences import SequenceService
+
+        result["sequence_membership"] = SequenceService(self.connection).get_membership(event_id)
         return result
 
     def patch_event(self, event_id: int, payload: dict[str, Any], actor: str = "system") -> dict[str, Any]:
