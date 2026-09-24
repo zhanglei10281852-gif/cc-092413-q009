@@ -48,3 +48,20 @@ class TaskComplete(BaseModel):
     worker_id: str = Field(..., min_length=1, max_length=80)
     result: dict = Field(default_factory=dict)
 
+
+class SequenceSplitRequest(BaseModel):
+    event_ids: list[int] = Field(..., min_length=1)
+    actor: str = Field(default="operator", min_length=1, max_length=80)
+    reason: str = Field(default="", max_length=300)
+
+
+class SequenceMergeRequest(BaseModel):
+    source_sequence_ids: list[int] = Field(..., min_length=1)
+    actor: str = Field(default="operator", min_length=1, max_length=80)
+    reason: str = Field(default="", max_length=300)
+
+
+class AlertPolicyRequest(BaseModel):
+    min_magnitude: float = Field(..., ge=-1, le=10)
+    suppression_seconds: int = Field(..., ge=1, le=30 * 24 * 3600)
+

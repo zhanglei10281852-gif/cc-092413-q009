@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.database import get_connection, transaction
+from app.seismic.sequences import associate_event, ensure_sequence_schema
 
 
 SCHEMA = """
@@ -128,6 +129,7 @@ class SeismicService:
     def __init__(self, connection: sqlite3.Connection | None = None):
         self.connection = connection or get_connection()
         ensure_schema()
+        ensure_sequence_schema()
 
     def create_event(self, payload: dict[str, Any], actor: str = "system") -> dict[str, Any]:
         now = _now()
@@ -138,7 +140,12 @@ class SeismicService:
             )
             event_id = cursor.lastrowid
             connection.execute("INSERT INTO seismic_event_audit(event_id,action,actor,after_json,created_at) VALUES(?,?,?,?,?)", (event_id, "create", actor, json.dumps(payload, ensure_ascii=False), now))
-            return _row(connection.execute("SELECT * FROM seismic_events WHERE id=?", (event_id,)).fetchone()) or {}
+            event_row = connection.execute("SELECT * FROM seismic_events WHERE id=?", (event_id,)).fetchone()
+            # 与事件入库同一事务完成余震关联，避免重启/崩溃后出现"已入库未归属"。
+            sequence_id = associate_event(connection, event_row, now)
+            result = _row(event_row) or {}
+            result["sequence_id"] = sequence_id
+            return result
 
     def get_event(self, event_id: int, include_observations: bool = True) -> dict[str, Any] | None:
         event = self.connection.execute("SELECT * FROM seismic_events WHERE id=?", (event_id,)).fetchone()

@@ -10,6 +10,8 @@ from app.core.errors import DomainError
 from app.database import close_connection, init_db
 from app.routers import affairs, announcements, departments, petitions, residents
 from app.seismic.router import router as seismic_router
+from app.seismic.sequence_router import router as seismic_sequence_router
+from app.seismic.sequences import ensure_sequence_schema, recover_state
 from app.seismic.service import ensure_schema as ensure_seismic_schema
 
 
@@ -18,6 +20,9 @@ async def lifespan(app: FastAPI):
     del app
     init_db()
     ensure_seismic_schema()
+    ensure_sequence_schema()
+    # 重启后恢复序列窗口游标，把各活动序列滚动到最新事件。
+    recover_state()
     yield
     close_connection()
 
@@ -49,6 +54,7 @@ app.include_router(announcements.router)
 app.include_router(departments.router)
 app.include_router(petitions.router)
 app.include_router(seismic_router)
+app.include_router(seismic_sequence_router)
 
 
 @app.get("/")
